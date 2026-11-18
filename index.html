@@ -1235,6 +1235,31 @@ const supabaseClient = window.supabase.createClient(
             sys_exams: 'exams', sys_exam_grades: 'exam_grades', sys_payment_plans: 'payment_plans', sys_student_payments: 'student_payments'
         };
         const recId = (col, r) => col === 'exam_grades' ? (r.examId + '|' + r.studentId) : String(r.id);
+        // ===== نسخة محلية دائمة (IndexedDB): البيانات بتفضل محفوظة حتى لو النت قطع أو الموقع اتقفل =====
+        // local_<key> = {arr, dirty}  آخر نسخة على الجهاز (dirty = لسه ما اترفعتش)
+        // clean_<key> = آخر نسخة معروف إنها متطابقة مع السحابة (أساس للدمج)
+        const idb = (() => {
+            let p;
+            const open = () => p || (p = new Promise((res, rej) => { const r = indexedDB.open('nagar_offline', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }));
+            const tx = (mode, fn) => open().then(db => new Promise((res, rej) => { const t = db.transaction('kv', mode); const out = fn(t.objectStore('kv')); t.oncomplete = () => res(out && out.result); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error); }));
+            return {
+                get: k => tx('readonly', st => st.get(k)).catch(() => undefined),
+                set: (k, v) => tx('readwrite', st => st.put(v, k)).catch(e => console.warn('idb', e)),
+                clear: () => tx('readwrite', st => st.clear()).catch(() => {})
+            };
+        })();
+        const wver = {};
+        // دمج تغييرات الجهاز (مقارنةً بآخر نسخة متزامنة) فوق نسخة السحابة الحالية، عشان ما نمسحش شغل جهاز تاني
+        function mergeDirty(col, cloudArr, baseArr, localArr) {
+            const id = r => recId(col, r);
+            const base = new Map((baseArr || []).map(r => [id(r), JSON.stringify(r)]));
+            const local = new Map(localArr.map(r => [id(r), r]));
+            const cloud = new Map(cloudArr.map(r => [id(r), r]));
+            const fresh = [];
+            local.forEach((r, i) => { if (base.get(i) !== JSON.stringify(r)) { if (cloud.has(i)) cloud.set(i, r); else fresh.push(r); } });
+            base.forEach((_, i) => { if (!local.has(i)) cloud.delete(i); });
+            return col === 'logs' ? [...fresh, ...cloud.values()] : [...cloud.values(), ...fresh];
+        }
         const synced = {};          // col -> Map(id -> json)
         let cloudReady = false;
         let pendingSyncs = 0;
@@ -1268,14 +1293,23 @@ const supabaseClient = window.supabase.createClient(
         }
 
         const failedKeys = new Set();
-        function queueSync(key, arr) {
+        function queueSync(key, arr, ver) {
+            if (ver === undefined) ver = wver[key] || 0;
+            if (!navigator.onLine || window._offlineMode) {
+                if (failedKeys.size === 0) showToast('مفيش إنترنت — البيانات محفوظة على الجهاز وهتترفع تلقائياً أول ما النت يرجع', 'info');
+                failedKeys.add(key); return;
+            }
             pendingSyncs++;
             syncChain = syncChain
                 .then(() => syncCollection(key, arr))
-                .then(() => { failedKeys.delete(key); })
+                .then(() => {
+                    failedKeys.delete(key);
+                    idb.set('clean_' + key, arr);
+                    if (ver === (wver[key] || 0)) idb.set('local_' + key, { arr, dirty: false });
+                })
                 .catch(err => {
                     console.error(err);
-                    if (failedKeys.size === 0) showToast('تعذر الحفظ على السحابة — هنعيد المحاولة تلقائياً، متقفلش الصفحة', 'error');
+                    if (failedKeys.size === 0) showToast('تعذر الحفظ على السحابة — البيانات محفوظة على الجهاز وهنعيد المحاولة تلقائياً', 'error');
                     failedKeys.add(key);
                 })
                 .finally(() => { pendingSyncs--; });
@@ -1285,22 +1319,43 @@ const supabaseClient = window.supabase.createClient(
         const _lsSetItem = Storage.prototype.setItem;
         Storage.prototype.setItem = function (k, v) {
             if (this === localStorage && COLLECTIONS[k] && cloudReady) {
-                try { queueSync(k, JSON.parse(v)); } catch (e) { console.error(e); }
+                try {
+                    const arr = JSON.parse(v);
+                    wver[k] = (wver[k] || 0) + 1;
+                    idb.set('local_' + k, { arr, dirty: true });
+                    queueSync(k, arr, wver[k]);
+                } catch (e) { console.error(e); }
                 return;
             }
             return _lsSetItem.call(this, k, v);
         };
-        window.addEventListener('beforeunload', e => { if (pendingSyncs > 0 || failedKeys.size > 0) { e.preventDefault(); e.returnValue = ''; } });
+        window.addEventListener('beforeunload', e => { if (pendingSyncs > 0) { e.preventDefault(); e.returnValue = ''; } });
         const SYNC_GETTERS = {
             sys_groups: () => groups, sys_students: () => students, sys_logs: () => logs, sys_eval_logs: () => evalLogs,
             sys_exams: () => exams, sys_exam_grades: () => examGrades, sys_payment_plans: () => paymentPlans, sys_student_payments: () => studentPayments
         };
         function retryFailedSync() {
             if (!cloudReady || pendingSyncs > 0) return;
-            [...failedKeys].forEach(k => queueSync(k, SYNC_GETTERS[k]()));
+            [...failedKeys].forEach(k => queueSync(k, SYNC_GETTERS[k](), wver[k] || 0));
         }
         setInterval(retryFailedSync, 20000);
-        window.addEventListener('online', retryFailedSync);
+        async function onBackOnline() {
+            if (window._offlineMode) {
+                let session = null;
+                try { session = (await supabaseClient.auth.getSession()).data.session; } catch (e) {}
+                if (session) { window._offlineMode = false; showToast('رجع الإنترنت — جاري رفع البيانات المحفوظة', 'success'); }
+                else {
+                    showToast('رجع الإنترنت لكن الجلسة انتهت — سجّل دخول وهتترفع بياناتك المحفوظة تلقائياً', 'info');
+                    cloudReady = false; window._offlineMode = false;
+                    document.getElementById('appLayout').classList.add('hidden');
+                    document.getElementById('loginScreen').classList.remove('hidden');
+                    return;
+                }
+            }
+            retryFailedSync();
+        }
+        window.addEventListener('online', onBackOnline);
+        setInterval(() => { if (window._offlineMode && navigator.onLine) onBackOnline(); }, 20000);
 
         async function loadAllFromCloud() {
             const rows = [];
@@ -1353,11 +1408,46 @@ const supabaseClient = window.supabase.createClient(
                 }
             }
 
+            // دمج أي تغييرات اتعملت على الجهاز وما اترفعتش (أوفلاين) + تحديث النسخة المحلية
+            for (const [k, col] of Object.entries(COLLECTIONS)) {
+                const cloudArr = by[col];
+                const loc = await idb.get('local_' + k);
+                if (loc && loc.dirty && Array.isArray(loc.arr)) {
+                    const base = await idb.get('clean_' + k);
+                    by[col] = mergeDirty(col, cloudArr, base, loc.arr);
+                    failedKeys.add(k);
+                } else {
+                    idb.set('local_' + k, { arr: cloudArr, dirty: false });
+                }
+                idb.set('clean_' + k, cloudArr);
+            }
             groups = by.groups; students = by.students; logs = by.logs; evalLogs = by.eval_logs;
             exams = by.exams; examGrades = by.exam_grades; paymentPlans = by.payment_plans; studentPayments = by.student_payments;
             cloudReady = true;
             _lsSetItem.call(localStorage, 'sys_cloud_migrated', '1');
             migrateGroups();
+            if (failedKeys.size) { showToast('جاري رفع البيانات اللي اتسجلت أوفلاين', 'info'); setTimeout(retryFailedSync, 300); }
+        }
+
+        // تشغيل أوفلاين من النسخة المحلية (لو مفيش إنترنت عند فتح الموقع)
+        async function loadFromLocalCache() {
+            const loaded = {};
+            for (const k of Object.keys(COLLECTIONS)) {
+                const loc = await idb.get('local_' + k);
+                if (!loc || !Array.isArray(loc.arr)) return false;
+                loaded[k] = loc;
+            }
+            for (const [k, col] of Object.entries(COLLECTIONS)) {
+                const base = await idb.get('clean_' + k);
+                const m = new Map(); (base || []).forEach(r => m.set(recId(col, r), JSON.stringify(r)));
+                synced[col] = m;
+                if (loaded[k].dirty) failedKeys.add(k);
+            }
+            groups = loaded.sys_groups.arr; students = loaded.sys_students.arr; logs = loaded.sys_logs.arr; evalLogs = loaded.sys_eval_logs.arr;
+            exams = loaded.sys_exams.arr; examGrades = loaded.sys_exam_grades.arr; paymentPlans = loaded.sys_payment_plans.arr; studentPayments = loaded.sys_student_payments.arr;
+            window._offlineMode = true; cloudReady = true;
+            showToast('شغّال أوفلاين من نسخة الجهاز — أي حاجة تسجلها هتترفع لما النت يرجع', 'info');
+            return true;
         }
 
         // ===== HELPERS (الصفوف، المجموعات، واتساب) =====
@@ -1456,12 +1546,16 @@ const supabaseClient = window.supabase.createClient(
 
         // AUTHENTICATION (Supabase Auth)
         async function checkAuthentication() {
-            const { data: { session } } = await supabaseClient.auth.getSession();
-            if (session) {
+            let session = null;
+            try { session = (await supabaseClient.auth.getSession()).data.session; } catch (e) { console.warn(e); }
+            const hasStoredAuth = () => { try { return Object.keys(localStorage).some(k => /^sb-.+-auth-token$/.test(k)); } catch (e) { return false; } };
+            const offlineEntry = !session && !navigator.onLine && hasStoredAuth();
+            if (session || offlineEntry) {
                 if (!cloudReady) {
-                    try { await loadAllFromCloud(); }
-                    catch (err) {
-                        console.error(err);
+                    let loadedOk = false;
+                    if (!offlineEntry) { try { await loadAllFromCloud(); loadedOk = true; } catch (err) { console.error(err); } }
+                    if (!loadedOk && await loadFromLocalCache()) loadedOk = true;
+                    if (!loadedOk) {
                         showToast('تعذر تحميل البيانات من السحابة. تأكد من الإنترنت وإعدادات قاعدة البيانات', 'error');
                         document.getElementById('loginScreen').classList.remove('hidden');
                         document.getElementById('appLayout').classList.add('hidden');
@@ -1470,7 +1564,7 @@ const supabaseClient = window.supabase.createClient(
                 }
                 document.getElementById('loginScreen').classList.add('hidden');
                 document.getElementById('appLayout').classList.remove('hidden');
-                document.getElementById('headerAdminName').textContent = session.user.email || adminCreds.name;
+                document.getElementById('headerAdminName').textContent = (session && session.user.email) || adminCreds.name;
                 initApp();
                 return true;
             }
@@ -1585,7 +1679,7 @@ const supabaseClient = window.supabase.createClient(
                 if (failedKeys.size > 0) { retryFailedSync(); await syncChain; }
                 if (failedKeys.size > 0 && !confirm('فيه تغييرات لم تُحفظ على السحابة وتسجيل الخروج هيضيعها. تكمل؟')) return;
             } catch (e) { console.error(e); }
-            failedKeys.clear();
+            failedKeys.clear(); await idb.clear(); window._offlineMode = false;
             // scope:'local' بيمسح الجلسة من الجهاز دايماً حتى لو النت ضعيف (الخروج العادي كان بيفشل بدون رسالة)
             try { await supabaseClient.auth.signOut({ scope: 'local' }); } catch (e) { console.error(e); }
             try { Object.keys(localStorage).filter(k => /^sb-.*-auth-token/.test(k)).forEach(k => localStorage.removeItem(k)); } catch (e) {}
@@ -2193,7 +2287,7 @@ const supabaseClient = window.supabase.createClient(
         function showOffBadge() {
             let b = document.getElementById('offBadge');
             if (!b) { b = document.createElement('div'); b.id = 'offBadge'; b.style.cssText = 'position:fixed;bottom:12px;left:12px;z-index:200;background:#b45309;color:#fff;font:700 12px Cairo,sans-serif;padding:6px 12px;border-radius:999px;display:none'; document.body.appendChild(b); }
-            const n = offQ().length; b.style.display = n ? 'block' : 'none'; b.textContent = '⚠ ' + n + ' عملية بانتظار الإنترنت';
+            const n = offQ().length + failedKeys.size; b.style.display = n ? 'block' : 'none'; b.textContent = '⚠ ' + n + ' عملية بانتظار الإنترنت';
         }
         async function upsertRows(rows, insertOnly) {
             for (let i = 0; i < rows.length; i += 200) {
@@ -2237,12 +2331,24 @@ const supabaseClient = window.supabase.createClient(
 
         // ===== إلغاء حصة اليوم / إجازة =====
         // ===== إشعارات تيليجرام (عن طريق دالة site_notify في Supabase حتى لا يظهر توكن البوت في الصفحة) =====
+        const TGQ = 'tg_queue';
+        const tgQ = () => { try { return JSON.parse(localStorage.getItem(TGQ) || '[]'); } catch (e) { return []; } };
+        const tgPush = text => { const q = tgQ(); q.push({ t: text, at: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) }); try { localStorage.setItem(TGQ, JSON.stringify(q.slice(-100))); } catch (e) {} };
+        async function flushTg() {
+            if (!cloudReady || window._offlineMode || !navigator.onLine || window._tgFlushing) return;
+            const q = tgQ(); if (!q.length) return; window._tgFlushing = true;
+            try { localStorage.setItem(TGQ, '[]'); for (const x of q) await notifyTelegram(x.t + '\n🕓 اتسجل أوفلاين: ' + x.at); }
+            finally { window._tgFlushing = false; }
+        }
+        window.addEventListener('online', () => setTimeout(flushTg, 2000)); setInterval(flushTg, 30000);
         async function notifyTelegram(text) {
             try {
                 if (!cloudReady) return;
+                if (!navigator.onLine || window._offlineMode) { tgPush(text); return; }
                 const { error } = await supabaseClient.rpc('site_notify', { msg: text });
                 if (error) throw error;
             } catch (e) {
+                if (/fetch|network|Failed/i.test(String((e && e.message) || e))) { tgPush(text); return; }
                 console.warn('telegram notify failed', e);
                 if (!window._tgWarned) { window._tgWarned = true; showToast('تعذر إرسال إشعار تيليجرام — شغّل ملف site_notify.sql في Supabase', 'error'); }
             }
@@ -2336,13 +2442,14 @@ const supabaseClient = window.supabase.createClient(
             const date = $id('dayOffDate').value;
             if (!date) { showToast('اختر اليوم أولاً', 'error'); return; }
             const checked = new Set([...document.querySelectorAll('.dayOffChk:checked')].map(c => c.value));
-            let added = 0, removedDays = 0; const addedGroups = [];
+            let added = 0, removedDays = 0; const addedGroups = [], reactGroups = [];
             groups.forEach(g => {
                 g.cancelled = g.cancelled || [];
                 const has = g.cancelled.includes(date);
                 if (checked.has(g.id) && !has) { g.cancelled.push(date); g.cancelled.sort(); g.cancelled = g.cancelled.slice(-400); added++; addedGroups.push(g); }
-                else if (!checked.has(g.id) && has) { g.cancelled = g.cancelled.filter(d => d !== date); removedDays++; }
+                else if (!checked.has(g.id) && has) { g.cancelled = g.cancelled.filter(d => d !== date); removedDays++; reactGroups.push(g); }
             });
+            if (reactGroups.length) notifyTelegram(`✅ تم إعادة تفعيل ${reactGroups.length > 1 ? 'حصص' : 'حصة'}\n${reactGroups.map(grpLine).join('\n')}\n📅 التاريخ: ${dmy(date)}`);
             if (!added && !removedDays) { showToast('مفيش تغيير — اختر مجموعة واحدة على الأقل', 'info'); return; }
             localStorage.setItem('sys_groups', JSON.stringify(groups));
             let removed = 0;
@@ -2382,6 +2489,7 @@ const supabaseClient = window.supabase.createClient(
             }
             renderGroupsCards(); renderLogsTable(); updateDashboardCharts(); renderStudentsTable();
             showToast(i > -1 ? 'تم إعادة تفعيل حصة اليوم' : ('تم إلغاء حصة اليوم' + (removed ? ' — اتشال غياب ' + removed + ' طالب' : '')), 'success');
+            if (i > -1) notifyTelegram(`✅ تم إعادة تفعيل حصة\n${grpLine(g)}\n📅 التاريخ: ${dmy(t)}`);
             if (i === -1) notifyTelegram(`🚫 تم إلغاء حصة\n${grpLine(g)}\n📅 التاريخ: ${dmy(t)}${removed ? '\n🧹 اتشال غياب ' + removed + ' سجل' : ''}`);
         }
 
@@ -3633,6 +3741,14 @@ ${row('إجمالي المطلوب', n(total) + ' جنيه')}${row('إجمالي
             if (amt === 0) { rec.paidDate = ''; delete rec.lastPay; delete rec.lastPayAt; delete rec.receiptNo; }
             localStorage.setItem('sys_student_payments', JSON.stringify(studentPayments));
             renderPaymentsTable();
+            if (diff > 0) {
+                try {
+                    const st = students.find(s => s.id === studentId) || {};
+                    const gr = groups.find(x => x.id === st.groupId);
+                    const left = Math.max(0, Math.round((Number(plan.amount) - amt) * 100) / 100);
+                    notifyTelegram(`💰 دفعة جديدة\n👤 ${st.name || ''}${st.grade ? ' (' + String(st.grade).replace('الصف ', '') + ')' : ''}${gr ? '\n👥 ' + gr.name : ''}\n🧾 ${plan.name}\n💵 المدفوع الآن: ${diff}\n📊 إجمالي المدفوع: ${amt} من ${plan.amount}\n${left > 0 ? '⏳ المتبقي: ' + left : '✅ تم السداد بالكامل'}\n📅 ${dmy(today10())}`);
+                } catch (e) { console.error(e); }
+            }
             if (diff > 0 && localStorage.getItem('ui_auto_receipt') === '1') setTimeout(() => printReceipt(planId, studentId), 50);
         }
         function payFull(planId, studentId) {
