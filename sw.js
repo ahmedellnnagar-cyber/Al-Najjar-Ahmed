@@ -1,6 +1,6 @@
 // Service Worker: الموقع يفتح حتى بدون إنترنت (الصفحة + مكتبات CDN بتتخزن في الكاش).
 // الصفحة نفسها network-first (دايماً أحدث نسخة)، ومكتبات CDN cache-first (نسخها ثابتة).
-const CACHE = 'nagar-chem-v2';
+const CACHE = 'nagar-chem-v3';
 const ASSETS = ['./', 'index.html', 'manifest.json', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 const CDN = ['cdn.tailwindcss.com', 'cdnjs.cloudflare.com', 'unpkg.com', 'cdn.jsdelivr.net', 'fonts.googleapis.com', 'fonts.gstatic.com'];
 
@@ -27,7 +27,12 @@ self.addEventListener('fetch', e => {
     e.respondWith(caches.match(req).then(hit => hit || fetch(req).then(res => store(req, res))));
     return;
   }
-  e.respondWith(
-    fetch(req).then(res => store(req, res)).catch(() => caches.match(req).then(r => r || caches.match('index.html')))
-  );
+  // network-first بمهلة 3 ثواني: لو النت بطيء أو "واصل ومش شغال" يفتح من الكاش فوراً بدل ما يعلّق
+  e.respondWith(new Promise(resolve => {
+    let done = false;
+    const fromCache = () => caches.match(req, { ignoreSearch: true }).then(r => r || caches.match('index.html'));
+    const t = setTimeout(() => { fromCache().then(r => { if (r && !done) { done = true; resolve(r); } }); }, 3000);
+    fetch(req).then(res => { clearTimeout(t); store(req, res); if (!done) { done = true; resolve(res); } })
+      .catch(() => { clearTimeout(t); if (!done) { done = true; fromCache().then(resolve); } });
+  }));
 });
