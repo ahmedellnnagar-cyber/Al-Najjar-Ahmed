@@ -1193,9 +1193,18 @@ const LOG_DAYS = 90; // عدد أيام سجل الحضور اللي بيتحم�
 const SUPABASE_URL = "https://pwqntzjoqpoisudutwsf.supabase.co"; // ← حط رابط مشروع Supabase الجديد
 const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB3cW50empvcXBvaXN1ZHV0d3NmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ5NTI4MjIsImV4cCI6MjExMDUyODgyMn0.Eobm21p9rjHD37Hls3BHkbImHMnVs4zHp3Pr8-JWe3o"; // ← حط المفتاح العام (anon / publishable) بتاع المشروع الجديد
 
+// أي طلب للسحابة بيتقطع بعد 12 ثانية بدل ما يعلّق الموقع لو النت ضعيف أو "واصل ومش شغال"
+const fetchWithTimeout = (url, opts = {}) => {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 12000);
+    if (opts.signal) opts.signal.addEventListener('abort', () => ctl.abort());
+    return fetch(url, { ...opts, signal: ctl.signal }).finally(() => clearTimeout(t));
+};
+const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 const supabaseClient = window.supabase.createClient(
     SUPABASE_URL,
-    SUPABASE_PUBLISHABLE_KEY
+    SUPABASE_PUBLISHABLE_KEY,
+    { global: { fetch: fetchWithTimeout } }
 );
         // تاريخ اليوم بالتوقيت المحلي (toISOString بيرجّع UTC وبيغلّط التاريخ بعد منتصف الليل)
         const _cairoDateFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -1358,6 +1367,7 @@ const supabaseClient = window.supabase.createClient(
         setInterval(() => { if (window._offlineMode && navigator.onLine) onBackOnline(); }, 20000);
 
         async function loadAllFromCloud() {
+            window._loadAborted = false;
             const rows = [];
             const size = 1000;
             const cutoff = localDate(new Date(Date.now() - LOG_DAYS * 86400000));
@@ -1408,6 +1418,7 @@ const supabaseClient = window.supabase.createClient(
                 }
             }
 
+            if (window._loadAborted) throw new Error('aborted');
             // دمج أي تغييرات اتعملت على الجهاز وما اترفعتش (أوفلاين) + تحديث النسخة المحلية
             for (const [k, col] of Object.entries(COLLECTIONS)) {
                 const cloudArr = by[col];
@@ -1546,14 +1557,14 @@ const supabaseClient = window.supabase.createClient(
 
         // AUTHENTICATION (Supabase Auth)
         async function checkAuthentication() {
-            let session = null;
-            try { session = (await supabaseClient.auth.getSession()).data.session; } catch (e) { console.warn(e); }
+            let session = null, sessionSlow = false;
+            try { session = (await withTimeout(supabaseClient.auth.getSession(), 4000)).data.session; } catch (e) { console.warn(e); sessionSlow = true; }
             const hasStoredAuth = () => { try { return Object.keys(localStorage).some(k => /^sb-.+-auth-token$/.test(k)); } catch (e) { return false; } };
-            const offlineEntry = !session && !navigator.onLine && hasStoredAuth();
+            const offlineEntry = !session && (!navigator.onLine || sessionSlow) && hasStoredAuth();
             if (session || offlineEntry) {
                 if (!cloudReady) {
                     let loadedOk = false;
-                    if (!offlineEntry) { try { await loadAllFromCloud(); loadedOk = true; } catch (err) { console.error(err); } }
+                    if (!offlineEntry) { try { await withTimeout(loadAllFromCloud(), 20000); loadedOk = true; } catch (err) { window._loadAborted = true; console.error(err); } }
                     if (!loadedOk && await loadFromLocalCache()) loadedOk = true;
                     if (!loadedOk) {
                         showToast('تعذر تحميل البيانات من السحابة. تأكد من الإنترنت وإعدادات قاعدة البيانات', 'error');
