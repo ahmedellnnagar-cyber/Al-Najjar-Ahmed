@@ -482,12 +482,16 @@
                 <div class="flex flex-col sm:flex-row justify-between items-center bg-white p-5 rounded-2xl border border-[#E2E8F0] shadow-sm gap-4">
                     <h2 class="text-base font-bold text-[#0F172A]">إدارة الطلاب وسجل التقييم الأسبوعي</h2>
                     <div class="relative w-full sm:w-64">
-                        <input type="text" id="studentSearchInput" oninput="renderStudentsTable()" placeholder="ابحث برقم ID أو الاسم..." class="w-full pl-3 pr-9 py-2 bg-[#F1F5F9] border border-[#E2E8F0] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#2563EB]">
+                        <input type="text" id="studentSearchInput" oninput="renderStudentsTable()" placeholder="ابحث برقم ID أو الاسم أو المكان..." class="w-full pl-3 pr-9 py-2 bg-[#F1F5F9] border border-[#E2E8F0] rounded-xl text-xs outline-none focus:ring-2 focus:ring-[#2563EB]">
                         <i class="fa-solid fa-magnifying-glass absolute right-3 top-2.5 text-[#64748B] text-xs"></i>
                     </div>
                     <button onclick="openAddStudentModal()" class="px-4 py-2.5 bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-bold rounded-xl flex items-center gap-2 whitespace-nowrap shadow-sm">
                         <i class="fa-solid fa-user-plus"></i> إضافة طالب جديد
                     </button>
+                    <button onclick="document.getElementById('impFile').click()" class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-2 whitespace-nowrap shadow-sm">
+                        <i class="fa-solid fa-file-excel"></i> استيراد من Excel
+                    </button>
+                    <input type="file" id="impFile" accept=".xlsx,.xls,.csv" class="hidden" onchange="impFileChosen(this)">
                 </div>
                 <div class="bg-white rounded-2xl border border-[#E2E8F0] shadow-sm overflow-hidden">
                     <div class="overflow-x-auto">
@@ -740,6 +744,11 @@
                     <select id="inputGroupGrade" required class="w-full p-2.5 bg-[#F1F5F9] border border-[#E2E8F0] rounded-xl font-bold outline-none"><option value="الصف الثالث الإعدادي">الصف الثالث الإعدادي</option><option value="الصف الأول الثانوي" selected>الصف الأول الثانوي</option><option value="الصف الثاني الثانوي">الصف الثاني الثانوي</option><option value="الصف الثالث الثانوي">الصف الثالث الثانوي</option></select>
                 </div>
                 <div>
+                    <label class="block font-bold mb-1">مكان المجموعة (البلد / السنتر)</label>
+                    <input type="text" id="inputGroupPlace" list="placeList" placeholder="مثال: قوص / الحجازة / شنهور" class="w-full p-2.5 bg-[#F1F5F9] border border-[#E2E8F0] rounded-xl outline-none font-bold">
+                    <datalist id="placeList"></datalist>
+                </div>
+                <div>
                     <label class="block font-bold mb-1">اسم المجموعة *</label>
                     <input type="text" id="inputGroupName" required placeholder="مثال: مجموعة أولى ثانوي (السبت والأربعاء)" class="w-full p-2.5 bg-[#F1F5F9] border border-[#E2E8F0] rounded-xl outline-none">
                 </div>
@@ -823,6 +832,33 @@
     </div>
 
     <!-- MODAL: ADD/EDIT STUDENT -->
+    <div id="importModal" class="fixed inset-0 bg-[#172554]/60 backdrop-blur-sm z-[85] flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-2xl max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-[#E2E8F0] text-xs">
+            <div class="flex justify-between items-center border-b border-[#E2E8F0] p-4">
+                <h3 class="font-bold text-[#0F172A] text-sm">استيراد الطلاب من Excel (إجابات Google Form)</h3>
+                <button onclick="closeModal('importModal')" class="text-[#64748B]"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div class="p-4 overflow-auto flex-1 space-y-3">
+                <div id="impSummary" class="font-bold text-[#0F172A]"></div>
+                <div class="overflow-x-auto border border-[#E2E8F0] rounded-xl">
+                    <table class="w-full text-right">
+                        <thead class="bg-[#F1F5F9] text-[#64748B] font-bold"><tr>
+                            <th class="p-2"><input type="checkbox" id="impAll" onchange="impToggleAll(this.checked)"></th>
+                            <th class="p-2">الاسم</th><th class="p-2">الكود</th><th class="p-2">هاتف الطالب</th><th class="p-2">هاتف ولي الأمر</th><th class="p-2">المجموعة</th><th class="p-2">الحالة</th>
+                        </tr></thead>
+                        <tbody id="impBody" class="divide-y divide-[#E2E8F0]"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="flex justify-between items-center gap-2 border-t border-[#E2E8F0] p-4">
+                <button onclick="impTemplate()" class="px-3 py-2 bg-[#F1F5F9] text-[#64748B] rounded-xl font-bold"><i class="fa-solid fa-download"></i> تحميل نموذج Excel</button>
+                <div class="flex gap-2">
+                    <button onclick="closeModal('importModal')" class="px-4 py-2 bg-[#F1F5F9] text-[#64748B] rounded-xl font-bold">إلغاء</button>
+                    <button onclick="impConfirm()" id="impGo" class="px-5 py-2 bg-emerald-600 text-white rounded-xl font-bold">إضافة المحدد</button>
+                </div>
+            </div>
+        </div>
+    </div>
     <div id="studentModal" class="fixed inset-0 bg-[#172554]/60 backdrop-blur-sm z-[80] flex items-center justify-center hidden p-4">
         <div class="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl border border-[#E2E8F0] space-y-4 text-xs">
             <div class="flex justify-between items-center border-b border-[#E2E8F0] pb-3">
@@ -1795,6 +1831,9 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
             if (parts.every(x => x[1] === parts[0][1])) return parts[0][1];
             return parts.map(x => `${x[0]}: ${x[1]}`).join(' | ');
         }
+        const placeOf = g => String((g && g.place) || '').trim();
+        const DEFAULT_PLACES = ['قوص', 'الحجازة', 'شنهور'];
+        function fillPlaceList() { const s = new Set([...DEFAULT_PLACES, ...groups.map(placeOf).filter(Boolean)]); $id('placeList').innerHTML = [...s].map(p => `<option value="${esc(p)}">`).join(''); }
         function timeLabel(g) {
             if (!g) return '';
             if (!g.dayTimes) return fmtGroupTime(g.time);
@@ -1865,6 +1904,8 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
             const rate = groupStudents.length > 0 ? Math.round(((presentCount + lateCount) / groupStudents.length) * 100) : 0;
             document.getElementById('statAttendanceRate').textContent = rate + '%';
 
+            // بدون نت ومكتبة الرسوم مش متخزنة: الأرقام بتظهر والرسوم بس بتتخطى (بدل ما الدالة تنهار وتوقف باقي التحميل)
+            if (typeof Chart === 'undefined') return;
             // Pie Chart
             const pieCtx = document.getElementById('attendancePieChart').getContext('2d');
             if (pieChart) pieChart.destroy();
@@ -1923,6 +1964,7 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
                                 <button onclick="deleteGroup('${g.id}')" title="حذف المجموعة" class="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg text-xs font-bold transition"><i class="fa-solid fa-trash"></i></button>
                             </div>
                         </div>
+                        ${placeOf(g) ? `<p class="text-xs font-bold text-emerald-700"><i class="fa-solid fa-location-dot ml-1"></i> المكان: ${esc(placeOf(g))}</p>` : ''}
                         <p class="text-xs text-[#64748B]"><i class="fa-solid fa-calendar-days ml-1"></i> الأيام المسموحة: <span class="font-bold text-[#2563EB]">${esc(g.days)}</span></p>
                         <p class="text-xs text-[#64748B]"><i class="fa-solid fa-clock ml-1"></i> الموعد: ${daySummary(g)}</p>
                         <button onclick="toggleCancelToday('${g.id}')" class="w-full px-3 py-1.5 rounded-lg text-xs font-bold ${isC ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}">${isC ? '↩ إعادة تفعيل حصة اليوم' : '🚫 إلغاء حصة اليوم / إجازة'}</button>
@@ -1944,7 +1986,7 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
             const extra = keep ? groups.find(g => g.id === keep && g.grade !== grade) : null;
             if (extra) list.push(extra);
             sel.innerHTML = list.length
-                ? list.map(g => `<option value="${g.id}">${esc(g.name)} (${timeLabel(g)})${g.grade !== grade ? ' — ' + esc(g.grade) : ''}</option>`).join('')
+                ? list.map(g => `<option value="${g.id}">${esc(g.name)}${placeOf(g) ? ' — 📍' + esc(placeOf(g)) : ''} (${timeLabel(g)})${g.grade !== grade ? ' — ' + esc(g.grade) : ''}</option>`).join('')
                 : '<option value="">لا توجد مجموعات لهذا الصف — أنشئ مجموعة أولاً</option>';
             if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
         }
@@ -2030,6 +2072,7 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
         function openAddGroupModal() {
             $id('editGroupId').value = "";
             $id('inputGroupName').value = "";
+            $id('inputGroupPlace').value = ""; fillPlaceList();
             setGroupTimeUI("16:00");
             setGroupEndUI("18:00");
             const f = $id('groupsGradeFilter').value;
@@ -2044,6 +2087,7 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
             if (!g) return;
             $id('editGroupId').value = g.id;
             $id('inputGroupName').value = g.name;
+            $id('inputGroupPlace').value = placeOf(g); fillPlaceList();
             setGroupTimeUI(g.time);
             setGroupEndUI(g.endTime || addMinStr(g.time, 120));
             $id('inputGroupGrade').value = g.grade || GRADES[0];
@@ -2057,6 +2101,7 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
             e.preventDefault();
             const id = $id('editGroupId').value;
             const name = $id('inputGroupName').value.trim();
+            const place = $id('inputGroupPlace').value.trim();
             let time = $id('inputGroupTime').value.trim();
             const grade = $id('inputGroupGrade').value;
             const selectedDays = Array.from(document.querySelectorAll('#groupDaysCheckboxGroup input:checked')).map(cb => cb.value);
@@ -2099,11 +2144,11 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
                         students.forEach(s => { if (s.groupId === id) s.grade = grade; });
                         localStorage.setItem('sys_students', JSON.stringify(students));
                     }
-                    Object.assign(g, { name, days: daysString, time, endTime, grade });
+                    Object.assign(g, { name, place, days: daysString, time, endTime, grade });
                     if (dayTimes) g.dayTimes = dayTimes; else delete g.dayTimes;
                 }
             } else {
-                groups.push(Object.assign({ id: 'GRP-' + Date.now(), name, grade, days: daysString, time, endTime }, dayTimes ? { dayTimes } : {}));
+                groups.push(Object.assign({ id: 'GRP-' + Date.now(), name, place, grade, days: daysString, time, endTime }, dayTimes ? { dayTimes } : {}));
             }
             localStorage.setItem('sys_groups', JSON.stringify(groups));
             closeModal('groupModal');
@@ -2708,8 +2753,9 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
             const tbody = document.getElementById('studentsTableBody');
             const search = document.getElementById('studentSearchInput').value.toLowerCase().trim();
 
+            const _gp = new Map(groups.map(g => [g.id, placeOf(g).toLowerCase()]));
             const filtered = students.filter(s =>
-                String(s.name || '').toLowerCase().includes(search) || String(s.code || '').toLowerCase().includes(search)
+                String(s.name || '').toLowerCase().includes(search) || String(s.code || '').toLowerCase().includes(search) || (_gp.get(s.groupId) || '').includes(search)
             );
 
             if (filtered.length === 0) {
@@ -2737,7 +2783,7 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
                         <td class="p-3.5 font-bold text-[#0F172A]">${esc(s.name)}</td>
                         <td class="p-3.5 font-mono font-bold text-[#2563EB]">${esc(s.code)}</td>
                         <td class="p-3.5 font-bold text-amber-600">${esc(gradeOf(s))}</td>
-                        <td class="p-3.5">${esc(grpName)} <span class="text-[10px] text-slate-500 block">${grpTime}</span></td>
+                        <td class="p-3.5">${esc(grpName)}${grp && placeOf(grp) ? ` <span class="text-[10px] font-bold text-emerald-700 block">📍 ${esc(placeOf(grp))}</span>` : ''} <span class="text-[10px] text-slate-500 block">${grpTime}</span></td>
                         <td class="p-3.5">${evalDisplay}</td>
                         <td class="p-3.5"><span class="px-2 py-0.5 ${absentCount > 2 ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-700'} rounded-full font-bold">${absentCount} غياب</span>${excMap[s.id] ? `<span class="text-[10px] font-bold text-sky-700 block mt-0.5">منهم ${excMap[s.id]} بعذر 📝</span>` : ''}</td>
                         <td class="p-3.5 font-mono text-slate-700">${esc(s.studentPhone || s.phone || '--')}</td>
@@ -2776,6 +2822,137 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
             $id('inputStudentPhone').value = s.studentPhone || s.phone || "";
             $id('inputParentPhone').value = s.parentPhone || s.phone || "";
             $id('studentModal').classList.remove('hidden');
+        }
+
+        // ===== استيراد الطلاب من Excel (إجابات Google Form) =====
+        let _imp = [];
+        const _digits = s => String(s ?? '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
+        const _nrm = s => _digits(s).replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/[\u064B-\u0652\u0640]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+        const _impPhone = v => { let n = _digits(v).replace(/\D/g, ''); if (n.startsWith('0020')) n = n.slice(4); else if (n.startsWith('20') && n.length === 12) n = n.slice(2); if (/^1\d{9}$/.test(n)) n = '0' + n; return n; };
+        function _impGrade(v) {
+            const x = _nrm(v); if (!x) return '';
+            const hit = GRADES.find(g => _nrm(g) === x); if (hit) return hit;
+            const prep = /اعدادي/.test(x), sec = /ثانوي/.test(x);
+            if (/ثالث|تالت|3/.test(x)) return prep ? GRADES[0] : sec ? GRADES[3] : '';
+            if (/ثاني|تاني|2/.test(x) && sec) return GRADES[2];
+            if (/اول|1/.test(x) && sec) return GRADES[1];
+            return '';
+        }
+        // مطابقة المجموعة: بالاسم (داخل نفس الصف)، ولو فيه أكتر من واحدة بالأيام والساعة
+        function _impMatchGroup(grade, gtxt, ap, place) {
+            let pool = grade ? groups.filter(g => g.grade === grade) : groups.slice();
+            if (!pool.length) pool = groups.slice();
+            const G = _nrm(gtxt), A = _nrm(ap), P = _nrm(place);
+            // المكان: من عمود المكان، أو لو مذكور جوه نص المجموعة/الميعاد
+            const pn = g => _nrm(placeOf(g));
+            let byP = P ? pool.filter(g => pn(g) && (pn(g) === P || P.includes(pn(g)) || pn(g).includes(P))) : [];
+            if (!byP.length) { const found = [...new Set(pool.map(pn).filter(Boolean))].filter(p => (G + ' ' + A).includes(p)); if (found.length === 1) byP = pool.filter(g => pn(g) === found[0]); }
+            if (byP.length) pool = byP;
+            let c = G ? pool.filter(g => { const n = _nrm(g.name); return n && (G === n || G.includes(n) || n.includes(G)); }) : [];
+            if (c.length === 1) return c[0].id;
+            if (!c.length) c = pool;
+            if (c.length === 1 && !G) return c[0].id;
+            const txt = G + ' ' + A;
+            const score = g => {
+                let s = 0;
+                String(g.days || '').split(/[,،]/).forEach(d => { if (d.trim() && txt.includes(_nrm(d))) s += 2; });
+                const m = /^(\d{1,2}):(\d{2})/.exec(g.time || '');
+                if (m) { const h = Number(m[1]), h12 = h % 12 || 12; if (new RegExp('(^|[^0-9])' + h12 + '([^0-9]|$)').test(txt) || new RegExp('(^|[^0-9])' + h + ':' + m[2]).test(txt)) s += 3; }
+                return s;
+            };
+            const sc = c.map(g => [score(g), g]).sort((a, b) => b[0] - a[0]);
+            return sc.length && sc[0][0] > 0 && (sc.length === 1 || sc[0][0] > sc[1][0]) ? sc[0][1].id : '';
+        }
+        async function impFileChosen(inp) {
+            const f = inp.files && inp.files[0]; inp.value = '';
+            if (!f) return;
+            if (!window.XLSX) { showToast('مكتبة Excel مش متحمّلة (محتاج نت أول مرة)', 'error'); return; }
+            if (!groups.length) { showToast('أنشئ المجموعات الأول قبل الاستيراد', 'error'); return; }
+            try {
+                const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+                const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' });
+                _impParse(rows);
+            } catch (e) { console.error(e); showToast('تعذر قراءة الملف، تأكد إنه Excel أو CSV سليم', 'error'); }
+        }
+        function _impParse(rows) {
+            const hi = rows.findIndex(r => r.some(c => String(c).trim()));
+            if (hi < 0) { showToast('الملف فاضي', 'error'); return; }
+            const H = rows[hi].map(_nrm), col = f => H.findIndex(f);
+            const par = h => /ولي|الامر|الاب\b/.test(h), ph = h => /رقم|هاتف|موبايل|تليفون|واتس|phone/.test(h);
+            const c = {
+                name: col(h => /اسم/.test(h) && !par(h)),
+                par: col(h => par(h) && ph(h)) >= 0 ? col(h => par(h) && ph(h)) : col(h => par(h) && !/اسم/.test(h)),
+                stu: col(h => ph(h) && !par(h) && !/كود|code/.test(h)),
+                code: col(h => /كود|code|\bid\b|جلوس/.test(h)),
+                grade: col(h => /صف|سنه دراسيه|مرحله/.test(h)),
+                group: col(h => /مجموع/.test(h)),
+                time: col(h => /ميعاد|موعد|معاد|توقيت|وقت|حصه|ايام|يوم/.test(h) && !/مجموع/.test(h)),
+                place: col(h => /مكان|فرع|سنتر|منطقه|بلد/.test(h))
+            };
+            if (c.name < 0) { showToast('مش لاقي عمود "اسم الطالب" في الملف', 'error'); return; }
+            const g = (r, i) => i >= 0 ? String(r[i] ?? '').trim() : '';
+            _imp = rows.slice(hi + 1).filter(r => r.some(x => String(x).trim())).map(r => {
+                const gr = _impGrade(g(r, c.grade));
+                const gid = _impMatchGroup(gr, g(r, c.group), g(r, c.time), g(r, c.place));
+                return { name: g(r, c.name), code: g(r, c.code), stu: _impPhone(g(r, c.stu)), par: _impPhone(g(r, c.par)), groupId: gid, sel: true };
+            });
+            _impRender();
+            document.getElementById('importModal').classList.remove('hidden');
+        }
+        function _impStatus(row, i) {
+            if (!row.name) return ['ناقص: الاسم', 'text-red-600', false];
+            if (!row.groupId) return ['اختار المجموعة', 'text-amber-600', false];
+            const nm = _nrm(row.name);
+            const dupDb = students.find(s => _nrm(s.name) === nm && ((row.par && _impPhone(s.parentPhone || s.phone) === row.par) || (row.stu && _impPhone(s.studentPhone) === row.stu)));
+            if (dupDb) return ['مكرر (موجود: ' + dupDb.name + ')', 'text-amber-600', true];
+            if (_imp.slice(0, i).some(o => _nrm(o.name) === nm && o.par === row.par && o.stu === row.stu)) return ['مكرر في الملف', 'text-amber-600', true];
+            if (row.code && students.some(s => String(s.code).trim().toLowerCase() === row.code.toLowerCase())) return ['الكود مستخدم', 'text-red-600', true];
+            if (!row.par) return ['بدون رقم ولي أمر', 'text-amber-600', false];
+            return ['جاهز', 'text-emerald-600', false];
+        }
+        function _impRender() {
+            const opts = id => '<option value="">— اختر —</option>' + groups.map(g => `<option value="${g.id}" ${g.id === id ? 'selected' : ''}>${esc(g.name)}${placeOf(g) ? ' 📍' + esc(placeOf(g)) : ''} • ${esc(g.grade || '')} • ${esc(String(g.days || ''))} ${esc(fmtGroupRange(g))}</option>`).join('');
+            let ok = 0;
+            document.getElementById('impBody').innerHTML = _imp.map((r, i) => {
+                const [txt, cls, warn] = _impStatus(r, i);
+                if (r._init !== true) { r._init = true; r.sel = txt === 'جاهز' || txt === 'بدون رقم ولي أمر'; }
+                if (r.sel && !r.name || r.sel && !r.groupId) r.sel = false;
+                if (r.sel) ok++;
+                return `<tr><td class="p-2"><input type="checkbox" ${r.sel ? 'checked' : ''} onchange="_imp[${i}].sel=this.checked;_impRender()"></td>
+                    <td class="p-2 font-bold">${esc(r.name)}</td><td class="p-2">${esc(r.code) || '<span class="text-[#64748B]">تلقائي</span>'}</td>
+                    <td class="p-2" dir="ltr">${esc(r.stu)}</td><td class="p-2" dir="ltr">${esc(r.par)}</td>
+                    <td class="p-2"><select class="p-1.5 bg-[#F1F5F9] border border-[#E2E8F0] rounded-lg max-w-[220px]" onchange="_imp[${i}].groupId=this.value;_impRender()">${opts(r.groupId)}</select></td>
+                    <td class="p-2 font-bold ${cls}">${txt}</td></tr>`;
+            }).join('');
+            document.getElementById('impSummary').textContent = `${_imp.length} صف في الملف — المحدد للإضافة: ${ok}`;
+            document.getElementById('impGo').disabled = !ok;
+        }
+        function impToggleAll(v) { _imp.forEach((r, i) => { r.sel = v && !!r.name && !!r.groupId && !_impStatus(r, i)[2]; }); _impRender(); }
+        function impConfirm() {
+            const take = _imp.filter((r, i) => r.sel && r.name && r.groupId);
+            if (!take.length) return;
+            let next = Math.max(1000, ...students.map(s => /^\d+$/.test(String(s.code).trim()) ? Number(s.code) : 0)) + 1;
+            const used = new Set(students.map(s => String(s.code).trim().toLowerCase()));
+            const perGroup = {}; let n = 0;
+            take.forEach(r => {
+                let code = r.code;
+                if (!code || used.has(code.toLowerCase())) { while (used.has(String(next))) next++; code = String(next); }
+                used.add(code.toLowerCase());
+                const g = groups.find(x => x.id === r.groupId);
+                students.push({ id: 'STU-' + Date.now() + '-' + (n++), name: r.name, grade: (g && g.grade) || GRADES[1], code, groupId: r.groupId, studentPhone: r.stu, parentPhone: r.par, phone: r.par });
+                perGroup[g ? g.name : '—'] = (perGroup[g ? g.name : '—'] || 0) + 1;
+            });
+            localStorage.setItem('sys_students', JSON.stringify(students));
+            closeModal('importModal');
+            [renderStudentsTable, updateDashboardCharts, populateReportStudentSelect, renderExamGradesTable, refreshGroupViews].forEach(f => { try { f(); } catch (e) { console.warn(e); } });
+            showToast(`تم استيراد ${take.length} طالب`, 'success');
+            notifyTelegram(`📥 تم استيراد ${take.length} طالب من Excel\n` + Object.entries(perGroup).map(([k, v]) => `• ${k}: ${v}`).join('\n'));
+        }
+        function impTemplate() {
+            if (!window.XLSX) { showToast('مكتبة Excel مش متحمّلة (محتاج نت أول مرة)', 'error'); return; }
+            const g = groups[0];
+            const ws = XLSX.utils.aoa_to_sheet([['الاسم', 'كود الطالب', 'رقم الطالب', 'رقم ولي الأمر', 'الصف', 'المكان', 'المجموعة', 'الميعاد'], ['مثال: أحمد محمد', '', '01000000000', '01100000000', (g && g.grade) || GRADES[1], (g && placeOf(g)) || 'قوص', (g && g.name) || 'اسم المجموعة', (g && (String(g.days || '') + ' ' + fmtGroupRange(g))) || 'السبت 2:00 م']]);
+            const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'الطلاب'); XLSX.writeFile(wb, 'نموذج_استيراد_الطلاب.xlsx');
         }
 
         async function saveStudent(e) {
@@ -3879,6 +4056,7 @@ ${row('إجمالي المطلوب', n(total) + ' جنيه')}${row('إجمالي
 
         // EXPORT ALL DATA TO EXCEL (SheetJS)
         function exportAllDataToExcel() {
+            if (!window.XLSX) { showToast('مكتبة Excel مش متحمّلة (محتاج نت أول مرة)', 'error'); return; }
             try {
                 const wb = XLSX.utils.book_new();
                 const addSheet = (rows, name) => {
@@ -4060,7 +4238,7 @@ ${row('إجمالي المطلوب', n(total) + ' جنيه')}${row('إجمالي
             ctx.fillStyle = '#ffffff'; _fitText(ctx, s.name, '800', u(19), maxW, fam); ctx.fillText(s.name, cx, OY + u(172));
             const grade = s.grade || GRADES[0];
             ctx.fillStyle = '#f5a623'; _fitText(ctx, grade, '700', u(15.5), maxW, fam); ctx.fillText(grade, cx, OY + u(206));
-            const gname = grp ? grp.name : '--';
+            const gname = grp ? grp.name + (placeOf(grp) ? ' • ' + placeOf(grp) : '') : '--';
             ctx.fillStyle = '#bfdbfe'; _fitText(ctx, gname, '500', u(15), maxW, fam); ctx.fillText(gname, cx, OY + u(236));
             // الصندوق الأبيض + QR + الكود
             _rrect(ctx, OX + u(22), OY + u(264), u(376), u(312), u(20)); ctx.fillStyle = '#ffffff'; ctx.fill();
@@ -4123,12 +4301,13 @@ ${row('إجمالي المطلوب', n(total) + ' جنيه')}${row('إجمالي
             window._cardStu = s.id;
             document.getElementById('cardStudentName').textContent = s.name;
             document.getElementById('cardStudentGrade').textContent = s.grade || 'الصف الأول الثانوي';
-            document.getElementById('cardStudentGroup').textContent = grp ? grp.name : '--';
+            document.getElementById('cardStudentGroup').textContent = grp ? grp.name + (placeOf(grp) ? ' • ' + placeOf(grp) : '') : '--';
             document.getElementById('cardStudentCode').textContent = s.code;
 
             const qrContainer = document.getElementById('cardQrCode');
             qrContainer.innerHTML = '';
-            new QRCode(qrContainer, { text: String(s.code), width: 450, height: 450 });
+            if (typeof QRCode === 'undefined') { qrContainer.innerHTML = '<p style="padding:24px;color:#b91c1c;font-weight:700">مكتبة QR مش متحمّلة. افتح الموقع مرة وإنت متصل بالنت وبعدها هتشتغل بدون نت.</p>'; showToast('مكتبة QR غير متاحة حالياً (محتاج نت مرة واحدة)', 'error'); }
+            else new QRCode(qrContainer, { text: String(s.code), width: 450, height: 450 });
             document.getElementById('barcodeCardModal').classList.remove('hidden');
         }
 
