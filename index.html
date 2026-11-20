@@ -1832,7 +1832,7 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
             return parts.map(x => `${x[0]}: ${x[1]}`).join(' | ');
         }
         const placeOf = g => String((g && g.place) || '').trim();
-        const DEFAULT_PLACES = ['قوص', 'الحجازة', 'شنهور'];
+        const DEFAULT_PLACES = ['قوص', 'الحجازة', 'شنهور','نقادة','قفط','العقب'];
         function fillPlaceList() { const s = new Set([...DEFAULT_PLACES, ...groups.map(placeOf).filter(Boolean)]); $id('placeList').innerHTML = [...s].map(p => `<option value="${esc(p)}">`).join(''); }
         function timeLabel(g) {
             if (!g) return '';
